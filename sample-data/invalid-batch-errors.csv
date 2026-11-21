@@ -1,0 +1,5 @@
+fullName,phone,email,nationalIdLast4,score,passed
+Valid Candidate,+919811110010,valid@example.com,2001,85,PASS
+Bad Phone Candidate,12345,badphone@example.com,2002,80,PASS
+Bad Score Candidate,+919811110012,badscore@example.com,2003,150,PASS
+Failed Candidate,+919811110013,failed@example.com,2004,30,FAIL

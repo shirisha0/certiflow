@@ -1,0 +1,194 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  TRAINING_CENTRE
+  DISTRICT_OFFICER
+  QUALITY_TEAM
+  STATE_OFFICE
+}
+
+enum BatchStatus {
+  DRAFT
+  SUBMITTED_DISTRICT
+  PENDING_QUALITY
+  PENDING_STATE
+  RETURNED_FOR_CORRECTION
+  REJECTED
+  APPROVED
+  ISSUING
+  ISSUED
+}
+
+enum DecisionType {
+  APPROVE
+  REJECT
+  SEND_BACK
+}
+
+enum CertificateStatus {
+  ISSUED
+  CANCELLED
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  role         UserRole
+  district     String?
+  centreName   String?
+  createdAt    DateTime @default(now())
+
+  createdBatches    Batch[]            @relation("CreatedBatches")
+  decisions         ApprovalDecision[]
+  auditEvents       AuditEvent[]
+  cancelledCerts    Certificate[]      @relation("CancelledBy")
+  acknowledgedAlerts EscalationAlert[] @relation("AcknowledgedBy")
+}
+
+model Batch {
+  id                  String      @id @default(uuid())
+  batchCode           String      @unique
+  courseName          String
+  district            String
+  trainingCentreName  String
+  status              BatchStatus @default(DRAFT)
+  approvalRound       Int         @default(1)
+  version             Int         @default(1)
+  requiresQualityTeam Boolean     @default(false)
+  stageEnteredAt      DateTime    @default(now())
+  createdById         String
+  createdBy           User        @relation("CreatedBatches", fields: [createdById], references: [id])
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  candidates       Candidate[]
+  decisions        ApprovalDecision[]
+  certificates     Certificate[]
+  escalationAlerts EscalationAlert[]
+  auditEvents      AuditEvent[]
+
+  @@index([status, stageEnteredAt])
+  @@index([district, status])
+}
+
+model Candidate {
+  id              String   @id @default(uuid())
+  batchId         String
+  batch           Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  fullName        String
+  phone           String
+  email           String?
+  nationalIdLast4 String
+  score           Int
+  passed          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  certificate     Certificate?
+
+  @@unique([batchId, phone])
+}
+
+model ApprovalDecision {
+  id        String       @id @default(uuid())
+  batchId   String
+  batch     Batch        @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  officerId String
+  officer   User         @relation(fields: [officerId], references: [id])
+  role      UserRole
+  stage     BatchStatus
+  round     Int
+  decision  DecisionType
+  reason    String?
+  active    Boolean      @default(true)
+  createdAt DateTime     @default(now())
+
+  @@unique([batchId, officerId, stage, round])
+}
+
+model Certificate {
+  id                 String            @id @default(uuid())
+  certificateNumber  String            @unique
+  batchId            String
+  batch              Batch             @relation(fields: [batchId], references: [id])
+  candidateId        String            @unique
+  candidate          Candidate         @relation(fields: [candidateId], references: [id])
+  candidateName      String
+  courseName         String
+  trainingCentreName String
+  district           String
+  status             CertificateStatus @default(ISSUED)
+  pdfPath            String?
+  downloadToken      String            @unique
+  issuedAt           DateTime          @default(now())
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancelledBy        User?             @relation("CancelledBy", fields: [cancelledById], references: [id])
+  cancellationReason String?
+
+  whatsappMessages   WhatsAppMessage[]
+
+  @@unique([batchId, candidateId])
+}
+
+model WhatsAppMessage {
+  id             String         @id @default(uuid())
+  certificateId  String         @unique
+  certificate    Certificate    @relation(fields: [certificateId], references: [id], onDelete: Cascade)
+  recipientPhone String
+  recipientName  String
+  messageBody    String
+  mediaUrl       String
+  idempotencyKey String         @unique
+  status         DeliveryStatus @default(PENDING)
+  attempts       Int            @default(0)
+  lastError      String?
+  providerMsgId  String?
+  sentAt         DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([status, updatedAt])
+}
+
+model EscalationAlert {
+  id             String    @id @default(uuid())
+  batchId        String
+  batch          Batch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  stage          BatchStatus
+  hoursStuck     Float
+  message        String
+  acknowledged   Boolean   @default(false)
+  acknowledgedById String?
+  acknowledgedBy User?     @relation("AcknowledgedBy", fields: [acknowledgedById], references: [id])
+  createdAt      DateTime  @default(now())
+}
+
+model AuditEvent {
+  id          String   @id @default(uuid())
+  batchId     String?
+  batch       Batch?   @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  actorId     String?
+  actor       User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorName   String
+  actorRole   String
+  action      String
+  entityType  String
+  entityId    String
+  details     Json?
+  createdAt   DateTime @default(now())
+}

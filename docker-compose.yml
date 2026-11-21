@@ -1,0 +1,99 @@
+# One command:  docker compose up --build
+# Postgres, Redis, API, worker and the web UI (nginx) all start in the right order.
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql://${POSTGRES_USER:-certiflow}:${POSTGRES_PASSWORD:-certiflow}@postgres:5432/${POSTGRES_DB:-certiflow}?schema=public
+  REDIS_URL: redis://redis:6379
+  JWT_SECRET: ${JWT_SECRET:-certiflow-hackathon-secret}
+  LARGE_BATCH_THRESHOLD: ${LARGE_BATCH_THRESHOLD:-50}
+  DISTRICT_APPROVALS_REQUIRED: ${DISTRICT_APPROVALS_REQUIRED:-2}
+  SLA_HOURS: ${SLA_HOURS:-48}
+  CERT_STORAGE_DIR: /app/storage/certificates
+  PUBLIC_VERIFY_BASE_URL: ${PUBLIC_VERIFY_BASE_URL:-http://localhost:5173/verify}
+  WHATSAPP_FAILURE_RATE: ${WHATSAPP_FAILURE_RATE:-0.25}
+  WHATSAPP_AMBIGUOUS_RATE: ${WHATSAPP_AMBIGUOUS_RATE:-0.1}
+  WHATSAPP_TIMEOUT_MS: ${WHATSAPP_TIMEOUT_MS:-150}
+  VERIFY_RATE_LIMIT_PER_MIN: ${VERIFY_RATE_LIMIT_PER_MIN:-60}
+  # Demo-only surface (persona switcher + stand-in WhatsApp inbox). Set to false in production.
+  DEMO_MODE: ${DEMO_MODE:-true}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-certiflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-certiflow}
+      POSTGRES_DB: ${POSTGRES_DB:-certiflow}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-certiflow} -d ${POSTGRES_DB:-certiflow}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # API: applies migrations on start, then seeds demo data (AUTO_SEED).
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      PORT: 4000
+      AUTO_SEED: "true"
+    ports:
+      - "4000:4000"
+    volumes:
+      - certstorage:/app/storage/certificates
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  # Worker: same image, different command. Waits for the API so migrations have run.
+  # Scale with:  docker compose up --scale worker=3
+  worker:
+    build: ./backend
+    command: ["npm", "run", "worker:start"]
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+    volumes:
+      - certstorage:/app/storage/certificates
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:
+  certstorage:

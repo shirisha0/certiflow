@@ -1,0 +1,9 @@
+fullName,phone,email,nationalIdLast4,score,passed
+Rahul Joshi,+919700002000,rahul.joshi@example.com,4915,84,PASS
+Nikhil Deshmukh,98765,nikhil.deshmukh@example.com,0152,84,PASS
+Kavya Desai,+919700002002,not-an-email,1638,59,PASS
+Diya More,+919700002003,diya.more@example.com,12A4,71,PASS
+Sai Bhosale,+919700002004,sai.bhosale@example.com,1127,abc,PASS
+,+919700002005,pranav.gaikwad@example.com,2584,83,PASS
+Tanvi Rane,+919700002006,tanvi.rane@example.com,4956,94,FAIL
+Shreya Naik,+919700002000,shreya.naik@example.com,0128,97,PASS
